@@ -1,0 +1,61 @@
+---
+- hosts: all
+  become: true
+  tasks:
+    # - name: update apt
+    #   apt: update_cache=yes
+
+    - name: install depends
+      apt:
+        name: "{{ packages }}"
+      vars:
+        packages:
+        - nginx
+        - openssl
+
+    - name: generate certs
+      command:
+        chdir: /etc/ssl
+        creates:
+          - /etc/ssl/private/selfsigned.key
+          - /etc/ssl/certs/selfsigned.crt
+        cmd: >
+          openssl req -new -newkey rsa:4096 -days 365 -nodes -x509
+          -subj "/C=ES/ST=Madrid/L=Madrid/O=Example. Inc./CN=example.com"
+          -keyout private/example.key -out certs/example.crt
+
+    - name: nginx config
+      notify: restart nginx
+      copy:
+        dest: /etc/nginx/sites-available/default
+        content: |
+            server {
+                listen 443 ssl;
+                server_name _;
+
+                root /usr/share/nginx/html/;
+                index index.html;
+                autoindex on;
+
+                ssl_certificate /etc/ssl/certs/example.crt;
+                ssl_certificate_key /etc/ssl/private/example.key;
+            }
+            server {
+                listen 80;
+                server_name _;
+                return 301 https://$host$request_uri;
+            }
+
+
+
+    - name: nginx
+      service:
+        name: nginx
+        state: started
+
+
+  handlers:
+    - name: restart nginx
+      service:
+        name: nginx
+        state: restarted
